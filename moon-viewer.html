@@ -218,7 +218,6 @@
     let highlightCanvas, highlightCtx, highlightTexture, highlightSphere;
 
     // drawing state
-    const BRUSH_ALPHA = 0.35;   // more translucent highlighter feel
     let brushRGB = "255,0,0";   // default red
     let drawingMode = "draw";   // "draw" or "erase"
 
@@ -374,6 +373,7 @@
       pointerNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     }
 
+    // capped-opacity highlighter behavior
     function drawOnHighlightSphere(e) {
       if (!highlightSphere || !highlightCanvas || !highlightCtx) return;
 
@@ -392,39 +392,55 @@
       const x = u * highlightCanvas.width;
       const y = (1 - v) * highlightCanvas.height;
 
-      const radius = 10; // brush radius in px
+      const radius     = 18;      // brush radius in px
+      const MAX_ALPHA  = 0.38;    // hard cap for highlight opacity
+      const BRUSH_ALPHA = 0.18;   // per-stroke alpha (won't exceed MAX_ALPHA overall)
 
-highlightCtx.save();
+      highlightCtx.save();
 
-if (drawingMode === "erase") {
-    highlightCtx.globalCompositeOperation = "destination-out";
-} else {
-    // Additive highlighter blending
-    highlightCtx.globalCompositeOperation = "lighter";
-}
+      if (drawingMode === "erase") {
+        highlightCtx.globalCompositeOperation = "destination-out";
+        highlightCtx.fillStyle = "rgba(0,0,0,1)";
+        highlightCtx.beginPath();
+        highlightCtx.arc(x, y, radius, 0, Math.PI * 2);
+        highlightCtx.fill();
+        highlightCtx.restore();
+        highlightTexture.needsUpdate = true;
+        return;
+      }
 
-highlightCtx.beginPath();
-highlightCtx.arc(x, y, radius, 0, Math.PI * 2);
-highlightCtx.fillStyle = `rgba(${brushRGB}, ${BRUSH_ALPHA})`;
-highlightCtx.fill();
-
-highlightCtx.restore();
-
-// HARD cap opacity so highlights never get too opaque
-const imgData = highlightCtx.getImageData(x - radius, y - radius, radius*2, radius*2);
-for (let i = 0; i < imgData.data.length; i += 4) {
-    const a = imgData.data[i+3];
-    if (a > 160) imgData.data[i+3] = 160;  // Cap alpha to ~0.63
-}
-highlightCtx.putImageData(imgData, x - radius, y - radius);
-
-highlightTexture.needsUpdate = true;
-
+      // ---- DRAW MODE: highlighter blend ----
+      highlightCtx.globalCompositeOperation = "lighter";
+      highlightCtx.fillStyle = `rgba(${brushRGB}, ${BRUSH_ALPHA})`;
 
       highlightCtx.beginPath();
       highlightCtx.arc(x, y, radius, 0, Math.PI * 2);
       highlightCtx.fill();
       highlightCtx.restore();
+
+      // ---- APPLY OPACITY CAP LOCALLY ----
+      const pad = 2;
+      const sx = Math.max(0, Math.floor(x - radius - pad));
+      const sy = Math.max(0, Math.floor(y - radius - pad));
+      const sw = Math.min(highlightCanvas.width  - sx, (radius + pad) * 2);
+      const sh = Math.min(highlightCanvas.height - sy, (radius + pad) * 2);
+
+      if (sw <= 0 || sh <= 0) {
+        highlightTexture.needsUpdate = true;
+        return;
+      }
+
+      const imgData = highlightCtx.getImageData(sx, sy, sw, sh);
+      const data = imgData.data;
+      const maxA = MAX_ALPHA * 255;
+
+      for (let i = 3; i < data.length; i += 4) {
+        if (data[i] > maxA) {
+          data[i] = maxA;
+        }
+      }
+
+      highlightCtx.putImageData(imgData, sx, sy);
 
       highlightTexture.needsUpdate = true;
     }
