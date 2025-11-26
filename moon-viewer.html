@@ -113,12 +113,12 @@
     camera.position.set(0, 0, cameraRadius);
     camera.lookAt(0, 0, 0);
 
-    // Lighting: bright lit side, nearly pitch-black night
-    const ambient = new THREE.AmbientLight(0xffffff, 0.00);   // tiny fill
+    // Lighting: bright lit side, pitch-black night
+    const ambient = new THREE.AmbientLight(0xffffff, 0.00);   // no fill
     scene.add(ambient);
 
     const sunLight = new THREE.DirectionalLight(0xffffff, 5.2);
-    sunLight.position.set(5, -3, -3);
+    sunLight.position.set(5, 0, 0);
     scene.add(sunLight);
 
     // Fallback sphere (placeholder Moon)
@@ -163,7 +163,7 @@
         // Update camera radius for new size
         cameraRadius = desiredRadius * 3.0;
         camera.position.set(0, 0, cameraRadius);
-        camera.lookAt(0, 0, 0);
+        camera.lookAt(-5, 5, 5);
       },
       undefined,
       (err) => {
