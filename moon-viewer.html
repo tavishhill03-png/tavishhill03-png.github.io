@@ -42,7 +42,7 @@
     }
     #phase-slider {
       /* vertical slider styling */
-      writing-mode: bt-lr;              /* Firefox */
+      writing-mode: bt-lr;                 /* Firefox */
       -webkit-appearance: slider-vertical; /* Chrome/Edge */
       width: 8px;
       height: 220px;
@@ -121,6 +121,10 @@
     sunLight.position.set(5, 0, -3);
     scene.add(sunLight);
 
+    // ---- NEW: sun elevation for angled terminator ----
+    const SUN_ELEV_DEG = -20;  // negative = below "equator"; tweak to taste
+    const SUN_ELEV_RAD = THREE.MathUtils.degToRad(SUN_ELEV_DEG);
+
     // Fallback sphere (placeholder Moon)
     const placeholderGeom = new THREE.SphereGeometry(1, 64, 64);
     const placeholderMat = new THREE.MeshStandardMaterial({
@@ -172,15 +176,20 @@
       }
     );
 
-    // --- Phase control: move Sun around the Moon ---
+    // --- Phase control: move Sun around the Moon with fixed elevation ---
     function updateSunFromSlider() {
       const deg = parseFloat(phaseSlider.value);
-      const rad = deg * Math.PI / 180;
-      const R   = 10; // distance of “Sun”
+      const azRad = deg * Math.PI / 180;   // azimuth angle (slider)
+      const R   = 10;                      // distance of “Sun”
 
-      const x = R * Math.sin(rad);
-      const z = R * Math.cos(rad);
-      sunLight.position.set(x, 0, z);
+      // Fixed elevation for the Sun: project into horizontal plane, then rotate around
+      const horizR = R * Math.cos(SUN_ELEV_RAD);
+      const y      = R * Math.sin(SUN_ELEV_RAD); // negative = below
+
+      const x = horizR * Math.sin(azRad);
+      const z = horizR * Math.cos(azRad);
+
+      sunLight.position.set(x, y, z);
       sunLight.lookAt(0, 0, 0);
     }
 
@@ -219,7 +228,6 @@
     function onWheel(e) {
       e.preventDefault();
       const delta = e.deltaY;
-      // Scroll up (negative deltaY) → zoom in
       cameraRadius *= 1 + delta * 0.001;
       cameraRadius = Math.min(Math.max(cameraRadius, minRadius), maxRadius);
       camera.position.set(0, 0, cameraRadius);
