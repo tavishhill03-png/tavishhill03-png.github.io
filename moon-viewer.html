@@ -31,14 +31,13 @@
       display: flex;
       align-items: center;
       justify-content: center;
-      pointer-events: none; /* wrapper doesn't interfere with mouse */
+      pointer-events: none; /* wrapper doesn't block mouse */
     }
 
     #phase-slider {
-      pointer-events: auto; /* but the slider itself can be interacted with */
-      width: 150px;         /* used as "length" since we rotate it */
+      pointer-events: auto;
+      width: 150px;          /* length of the slider (rotated) */
       transform: rotate(-90deg);
-      /* Basic styling; you can customize more as needed */
       -webkit-appearance: none;
       appearance: none;
       background: #333;
@@ -81,18 +80,18 @@
     </div>
   </div>
 
-  <!-- Three.js and helpers -->
-  <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
-  <script src="https://unpkg.com/three@0.159.0/examples/js/controls/OrbitControls.js"></script>
-  <script src="https://unpkg.com/three@0.159.0/examples/js/loaders/GLTFLoader.js"></script>
+  <!-- Use ES modules so OrbitControls / GLTFLoader work cleanly -->
+  <script type="module">
+    import * as THREE from 'https://unpkg.com/three@0.159.0/build/three.module.js';
+    import { OrbitControls } from 'https://unpkg.com/three@0.159.0/examples/jsm/controls/OrbitControls.js';
+    import { GLTFLoader } from 'https://unpkg.com/three@0.159.0/examples/jsm/loaders/GLTFLoader.js';
 
-  <script>
     let scene, camera, renderer, controls;
     let moon = null;
     let dirLight, ambientLight;
     const sunDir = new THREE.Vector3();
 
-    // Elevation angle for sunlight: negative = from below equator
+    // Sun elevation: negative = from below the lunar equator
     const SUN_ELEV_DEG = -20;
     const SUN_ELEV_RAD = THREE.MathUtils.degToRad(SUN_ELEV_DEG);
 
@@ -117,7 +116,7 @@
       renderer.setClearColor(0x000000, 1);
       container.appendChild(renderer.domElement);
 
-      // Lights: low ambient + directional as Sun
+      // Lights: dim ambient + directional "Sun"
       ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
       scene.add(ambientLight);
 
@@ -128,11 +127,11 @@
       dirLight.target.position.set(0, 0, 0);
       scene.add(dirLight.target);
 
-      // Initial lighting from slider's default value
+      // Initial lighting based on slider default
       updateLightingFromPhase(parseFloat(phaseSlider.value));
 
-      // OrbitControls (no auto-rotation; mouse wheel zoom enabled)
-      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      // Orbit controls (no auto-rotation; wheel zoom enabled)
+      controls = new OrbitControls(camera, renderer.domElement);
       controls.enableDamping = true;
       controls.dampingFactor = 0.05;
       controls.enablePan = false;
@@ -141,33 +140,29 @@
       controls.minDistance = 2.0;
       controls.maxDistance = 15.0;
 
-      // Slightly limit vertical rotation so "below" has meaning visually if you want
-      // controls.minPolarAngle = 0.2;
-      // controls.maxPolarAngle = Math.PI - 0.2;
-
       // Load high-res Moon model
-      const loader = new THREE.GLTFLoader();
+      const loader = new GLTFLoader();
       loader.load(
-        'the_moon.glb',          // make sure this path matches where you host the glb
+        'the_moon.glb',   // make sure this path is correct relative to this HTML file
         (gltf) => {
           moon = gltf.scene;
           scene.add(moon);
 
-          // Optionally normalize scale so radius is ~1–2 units
+          // Normalize scale so radius ~ 2 units
           const box = new THREE.Box3().setFromObject(moon);
           const size = new THREE.Vector3();
           box.getSize(size);
           const maxDim = Math.max(size.x, size.y, size.z);
-          const desiredRadius = 2.0; // tweak as you like
+          const desiredRadius = 2.0;
           const scaleFactor = (desiredRadius * 2) / maxDim;
           moon.scale.setScalar(scaleFactor);
 
-          // Center the model
+          // Center model at origin
           const center = new THREE.Vector3();
           box.getCenter(center);
           moon.position.sub(center.multiplyScalar(scaleFactor));
 
-          // Ensure lighting is updated now that the Moon is present
+          // Reinforce lighting once Moon is present
           updateLightingFromPhase(parseFloat(phaseSlider.value));
         },
         undefined,
@@ -176,7 +171,7 @@
         }
       );
 
-      // Slider interaction
+      // Phase slider
       phaseSlider.addEventListener('input', (e) => {
         const val = parseFloat(e.target.value);
         updateLightingFromPhase(val);
@@ -196,22 +191,19 @@
     }
 
     // phaseValue: 0 → 1
-    // We rotate the Sun around the Moon in azimuth, with a fixed elevation below horizontal
     function updateLightingFromPhase(phaseValue) {
       const phaseRad = phaseValue * Math.PI * 2; // 0 → 2π
 
-      // direction from Sun toward Moon in Moon's coordinate frame
+      // Direction from Sun toward Moon in Moon coords
       sunDir.set(
         Math.cos(SUN_ELEV_RAD) * Math.cos(phaseRad), // x
-        Math.sin(SUN_ELEV_RAD),                      // y (negative = from "below")
+        Math.sin(SUN_ELEV_RAD),                      // y (below equator)
         Math.cos(SUN_ELEV_RAD) * Math.sin(phaseRad)  // z
       ).normalize();
 
-      // Place the directional light far away along this direction
-      const lightDistance = 50; // arbitrary; large enough to approximate parallel rays
+      const lightDistance = 50;
       dirLight.position.copy(sunDir).multiplyScalar(lightDistance);
 
-      // Always point light at the Moon's center (0,0,0 in this setup)
       dirLight.target.position.set(0, 0, 0);
       dirLight.target.updateMatrixWorld();
     }
@@ -219,9 +211,7 @@
     function animate() {
       requestAnimationFrame(animate);
 
-      if (controls) {
-        controls.update();
-      }
+      if (controls) controls.update();
 
       renderer.render(scene, camera);
     }
