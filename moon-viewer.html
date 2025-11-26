@@ -181,7 +181,7 @@
       const x = R * Math.sin(rad);
       const z = R * Math.cos(rad);
       sunLight.position.set(x, 0, z);
-      sunLight.lookAt(0, 0, 0);
+      sunLight.lookAt(-4, 4, 4);
     }
 
     phaseSlider.addEventListener("input", updateSunFromSlider);
