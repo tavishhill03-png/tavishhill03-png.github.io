@@ -29,7 +29,7 @@
       z-index: 10;
       pointer-events: none;
     }
-    /* Vertical slider controls on left side */
+    /* Vertical slider + controls on left side */
     #controls {
       position: absolute;
       left: 10px;
@@ -39,6 +39,9 @@
       background: rgba(0,0,0,0.7);
       border-radius: 6px;
       z-index: 10;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 12px;
     }
     #phase-slider {
       /* vertical slider styling */
@@ -46,7 +49,7 @@
       -webkit-appearance: slider-vertical; /* Chrome/Edge */
       width: 8px;
       height: 220px;
-      margin: 0;
+      margin: 4px 0 0 0;
     }
     #error-overlay {
       position: absolute;
@@ -61,6 +64,9 @@
       z-index: 20;
       display: none;
     }
+    #draw-toggle {
+      margin-right: 4px;
+    }
   </style>
 </head>
 <body>
@@ -71,6 +77,11 @@
   </div>
 
   <div id="controls">
+    <label>
+      <input type="checkbox" id="draw-toggle">
+      Highlight
+    </label>
+    <br>
     <input type="range" id="phase-slider" min="0" max="360" step="1" value="30">
   </div>
 
@@ -84,6 +95,7 @@
 
     const container    = document.getElementById("container");
     const phaseSlider  = document.getElementById("phase-slider");
+    const drawToggle   = document.getElementById("draw-toggle");
     const errorOverlay = document.getElementById("error-overlay");
 
     function showError(msg, err) {
@@ -121,7 +133,7 @@
     sunLight.position.set(5, 0, -3);
     scene.add(sunLight);
 
-    // ---- NEW: sun elevation for angled terminator ----
+    // ---- Sun elevation for angled terminator ----
     const SUN_ELEV_DEG = -20;  // negative = below "equator"; tweak to taste
     const SUN_ELEV_RAD = THREE.MathUtils.degToRad(SUN_ELEV_DEG);
 
@@ -136,6 +148,46 @@
     scene.add(placeholderMoon);
 
     let moon = placeholderMoon;
+
+    // ----- Highlight shell: canvas texture on a slightly larger sphere -----
+    let highlightCanvas, highlightCtx, highlightTexture, highlightSphere;
+
+    function createHighlightResources() {
+      if (!highlightCanvas) {
+        highlightCanvas = document.createElement("canvas");
+        highlightCanvas.width = 1024;
+        highlightCanvas.height = 512;
+        highlightCtx = highlightCanvas.getContext("2d");
+        highlightCtx.clearRect(0, 0, highlightCanvas.width, highlightCanvas.height);
+
+        highlightTexture = new THREE.CanvasTexture(highlightCanvas);
+        highlightTexture.needsUpdate = true;
+      }
+    }
+
+    function attachHighlightSphere(desiredRadius) {
+      createHighlightResources();
+
+      // Remove old shell if any
+      if (highlightSphere && highlightSphere.parent) {
+        highlightSphere.parent.remove(highlightSphere);
+      }
+
+      const shellRadius = desiredRadius * 1.002; // just above surface to avoid z-fighting
+      const shellGeom = new THREE.SphereGeometry(shellRadius, 128, 64);
+      const shellMat = new THREE.MeshBasicMaterial({
+        map: highlightTexture,
+        transparent: true,
+        depthWrite: false,
+        side: THREE.FrontSide
+      });
+
+      highlightSphere = new THREE.Mesh(shellGeom, shellMat);
+
+      // Attach as child so it follows Moon's rotation/position
+      moon.add(highlightSphere);
+      highlightSphere.position.set(0, 0, 0);
+    }
 
     // Load high-res Moon model
     const loader = new GLTFLoader();
@@ -168,13 +220,21 @@
         cameraRadius = desiredRadius * 3.0;
         camera.position.set(0, 0, cameraRadius);
         camera.lookAt(0, 0, 0);
+
+        // Add highlight shell matched to this Moon
+        attachHighlightSphere(desiredRadius);
       },
       undefined,
       (err) => {
         showError("Failed to load high-res Moon model. Using fallback sphere.", err);
         moon = placeholderMoon;
+        // Placeholder has radius 1
+        attachHighlightSphere(1.0);
       }
     );
+
+    // If high-res never loads, ensure placeholder has highlight shell
+    attachHighlightSphere(1.0);
 
     // --- Phase control: move Sun around the Moon with fixed elevation ---
     function updateSunFromSlider() {
@@ -182,7 +242,7 @@
       const azRad = deg * Math.PI / 180;   // azimuth angle (slider)
       const R   = 10;                      // distance of “Sun”
 
-      // Fixed elevation for the Sun: project into horizontal plane, then rotate around
+      // Fixed elevation for the Sun
       const horizR = R * Math.cos(SUN_ELEV_RAD);
       const y      = R * Math.sin(SUN_ELEV_RAD); // negative = below
 
@@ -196,22 +256,71 @@
     phaseSlider.addEventListener("input", updateSunFromSlider);
     updateSunFromSlider(); // initial position
 
-    // --- Drag-to-rotate (no auto-spin) ---
+    // --- Drag-to-rotate OR draw (depending on mode) ---
     let isDragging = false;
+    let isDrawing  = false;
     let prevX = 0;
     let prevY = 0;
 
+    const raycaster = new THREE.Raycaster();
+    const pointerNDC = new THREE.Vector2();
+
+    function setPointerFromEvent(e) {
+      const rect = renderer.domElement.getBoundingClientRect();
+      pointerNDC.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
+      pointerNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
+    }
+
+    function drawOnHighlightSphere(e) {
+      if (!highlightSphere || !highlightCanvas || !highlightCtx) return;
+
+      setPointerFromEvent(e);
+      raycaster.setFromCamera(pointerNDC, camera);
+
+      const intersects = raycaster.intersectObject(highlightSphere, false);
+      if (!intersects.length) return;
+
+      const hit = intersects[0];
+      if (!hit.uv) return;
+
+      const u = hit.uv.x;
+      const v = hit.uv.y;
+
+      const x = u * highlightCanvas.width;
+      const y = (1 - v) * highlightCanvas.height;
+
+      const radius = 10; // brush radius in px
+      highlightCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
+      highlightCtx.beginPath();
+      highlightCtx.arc(x, y, radius, 0, Math.PI * 2);
+      highlightCtx.fill();
+
+      highlightTexture.needsUpdate = true;
+    }
+
     renderer.domElement.addEventListener("pointerdown", (e) => {
-      isDragging = true;
       prevX = e.clientX;
       prevY = e.clientY;
+
+      if (drawToggle.checked) {
+        isDrawing = true;
+        drawOnHighlightSphere(e); // dot on initial touch
+      } else {
+        isDragging = true;
+      }
     });
 
     window.addEventListener("pointerup", () => {
       isDragging = false;
+      isDrawing  = false;
     });
 
     window.addEventListener("pointermove", (e) => {
+      if (isDrawing) {
+        drawOnHighlightSphere(e);
+        return;
+      }
+
       if (!isDragging || !moon) return;
       const deltaX = (e.clientX - prevX) * 0.01;
       const deltaY = (e.clientY - prevY) * 0.01;
