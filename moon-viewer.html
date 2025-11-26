@@ -84,8 +84,7 @@
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
-    // Make renderer clear color something obvious so we know it's drawing
-    renderer.setClearColor(0x003366); // dark blue
+    renderer.setClearColor(0x003366); // dark blue clear color
     container.appendChild(renderer.domElement);
     console.log("✅ Renderer created");
 
