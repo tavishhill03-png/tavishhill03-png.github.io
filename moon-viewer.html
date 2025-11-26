@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Moon Phases Viewer (Sphere + Marker)</title>
+  <title>Moon Phases Viewer</title>
   <style>
     html, body {
       margin: 0;
@@ -10,7 +10,7 @@
       overflow: hidden;
       width: 100%;
       height: 100%;
-      background: #000; /* page background */
+      background: #000;
     }
     #container {
       width: 100%;
@@ -34,11 +34,12 @@
 <body>
   <div id="container"></div>
   <div id="ui-overlay">
-    Spinning sphere with marker · Side-lit from +X<br>
+    Side-lit sphere (Moon placeholder)<br>
     Click + drag to rotate.
   </div>
 
   <script type="module">
+    // Import local Three.js module
     import * as THREE from "./three/three.module.js";
 
     const container = document.getElementById("container");
@@ -52,7 +53,7 @@
 
     // Scene & camera
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000); // black scene bg
+    scene.background = new THREE.Color(0x000000);
 
     const camera = new THREE.PerspectiveCamera(
       45,
@@ -63,17 +64,16 @@
     camera.position.set(0, 0, 3);
     camera.lookAt(0, 0, 0);
 
-    // Lighting for “phases”
-    const ambient = new THREE.AmbientLight(0xffffff, 0.05); // tiny fill
+    // Lighting for phases
+    const ambient = new THREE.AmbientLight(0xffffff, 0.05); // small fill
     scene.add(ambient);
 
     const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    sunLight.position.set(5, 0, 0); // Sun from +X (right side)
+    sunLight.position.set(5, 0, 0); // “Sun” from +X
     scene.add(sunLight);
 
-    // Sphere as placeholder Moon
-    const radius = 1;
-    const geometry = new THREE.SphereGeometry(radius, 64, 64);
+    // Sphere as Moon placeholder
+    const geometry = new THREE.SphereGeometry(1, 64, 64);
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff,
       roughness: 1.0,
@@ -82,18 +82,7 @@
     const moon = new THREE.Mesh(geometry, material);
     scene.add(moon);
 
-    // Add a small red marker dot on the surface so rotation is obvious
-    const markerGeo = new THREE.SphereGeometry(0.07, 16, 16);
-    const markerMat = new THREE.MeshStandardMaterial({ color: 0xff0000 });
-    const marker = new THREE.Mesh(markerGeo, markerMat);
-
-    // Place marker slightly above the surface at some arbitrary point
-    // Start near the "north" pole, a bit toward the camera
-    const markerPos = new THREE.Vector3(0.0, 1.0, 0.4).normalize().multiplyScalar(radius * 1.01);
-    marker.position.copy(markerPos);
-    moon.add(marker);
-
-    // ---- Simple drag-to-rotate controls ----
+    // Simple drag-to-rotate
     let isDragging = false;
     let prevX = 0;
     let prevY = 0;
@@ -118,11 +107,11 @@
       prevY = e.clientY;
     });
 
+    // Animation loop (gentle auto-spin)
     function animate() {
       requestAnimationFrame(animate);
-      // Auto spin so motion is obvious
-      moon.rotation.y += 0.02;  // faster spin
-      moon.rotation.x += 0.005; // slight tilt variation
+      moon.rotation.y += 0.003;
+      moon.rotation.x += 0.001;
       renderer.render(scene, camera);
     }
     animate();
