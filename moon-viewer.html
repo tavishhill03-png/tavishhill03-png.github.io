@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Moon Phases Viewer (Three.js ES Modules)</title>
+  <title>Moon Phases Viewer (Sphere Test)</title>
   <style>
     html, body {
       margin: 0;
@@ -41,18 +41,17 @@
   <script type="module">
     import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js";
     import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
-    import { GLTFLoader } from "https://unpkg.com/three@0.161.0/examples/jsm/loaders/GLTFLoader.js";
-
-    const MODEL_URL = "small_moon.glb"; // <-- match your actual filename
 
     const container = document.getElementById("container");
 
+    // Renderer
     const renderer = new THREE.WebGLRenderer({ antialias: true });
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     container.appendChild(renderer.domElement);
 
+    // Scene & camera
     const scene = new THREE.Scene();
     scene.background = new THREE.Color(0x000000);
 
@@ -64,59 +63,47 @@
     );
     camera.position.set(0, 0, 3);
 
+    // Controls
     const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.minDistance = 0.5;
     controls.maxDistance = 10.0;
 
-    const ambient = new THREE.AmbientLight(0xffffff, 0.05);
+    // Lighting for phases
+    const ambient = new THREE.AmbientLight(0xffffff, 0.05); // tiny fill
     scene.add(ambient);
 
     const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    sunLight.position.set(5, 0, 0);
+    sunLight.position.set(5, 0, 0); // Sun from +X (right side)
     scene.add(sunLight);
 
-    let moon = null;
+    // === Placeholder Moon sphere ===
+    const geometry = new THREE.SphereGeometry(1, 64, 64);
+    const material = new THREE.MeshStandardMaterial({
+      color: 0xffffff,
+      roughness: 1.0,
+      metalness: 0.0
+    });
+    const moon = new THREE.Mesh(geometry, material);
+    scene.add(moon);
 
-    const loader = new GLTFLoader();
-    loader.load(
-      MODEL_URL,
-      (gltf) => {
-        moon = gltf.scene;
-
-        const box = new THREE.Box3().setFromObject(moon);
-        const center = new THREE.Vector3();
-        const size = new THREE.Vector3();
-        box.getCenter(center);
-        box.getSize(size);
-
-        moon.position.sub(center);
-        scene.add(moon);
-
-        const maxDim = Math.max(size.x, size.y, size.z) || 1.0;
-        const fitDist = maxDim * 2.0;
-        camera.position.set(0, 0, fitDist);
-        camera.lookAt(0, 0, 0);
-        controls.target.set(0, 0, 0);
-        controls.update();
-      },
-      undefined,
-      (err) => {
-        console.error("Error loading Moon GLB:", err);
-      }
-    );
+    // Make sure camera/controls look at the sphere
+    controls.target.set(0, 0, 0);
+    controls.update();
 
     function animate() {
       requestAnimationFrame(animate);
-      if (moon) {
-        moon.rotation.y += 0.0008;
-      }
+
+      // gentle spin so you can see the terminator move
+      moon.rotation.y += 0.0008;
+
       controls.update();
       renderer.render(scene, camera);
     }
     animate();
 
+    // Handle resize
     window.addEventListener("resize", () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
