@@ -1,52 +1,150 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8" />
-  <title>Moon Viewer (model-viewer)</title>
+  <meta charset="UTF-8">
+  <title>Moon Phases Viewer (Side Lighting)</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
+      overflow: hidden;
       width: 100%;
       height: 100%;
       background: #000;
     }
-    model-viewer {
+    #container {
       width: 100%;
       height: 100%;
-      background: #000;
     }
-    #overlay {
+    #ui-overlay {
       position: absolute;
-      top: 8px;
-      left: 8px;
-      z-index: 10;
+      top: 10px;
+      left: 10px;
+      padding: 6px 10px;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 12px;
       color: #fff;
-      padding: 4px 8px;
-      background: rgba(0,0,0,0.4);
+      background: rgba(0,0,0,0.5);
       border-radius: 4px;
+      z-index: 10;
       pointer-events: none;
     }
   </style>
-  <script type="module"
-          src="https://unpkg.com/@google/model-viewer/dist/model-viewer.min.js">
-  </script>
 </head>
 <body>
-  <div id="overlay">
-    Drag to rotate • Scroll to zoom • Right-drag to pan
+  <div id="container"></div>
+  <div id="ui-overlay">
+    Drag to rotate • Scroll to zoom • Right-drag to pan<br>
+    Sun light is fixed from the +X direction (right side)
   </div>
 
-  <!-- GLB is in the same repo root as this file -->
-  <model-viewer
-    src="the_moon.glb"
-    camera-controls
-    auto-rotate
-    autoplay
-    exposure="1"
-    shadow-intensity="1">
-  </model-viewer>
+  <!-- Three.js & dependencies -->
+  <script src="https://unpkg.com/three@0.161.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.161.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.161.0/examples/js/loaders/GLTFLoader.js"></script>
+
+  <script>
+    // Change this filename if your small moon GLB has a different name
+    const MODEL_URL = "the_moon.glb";
+
+    const container = document.getElementById("container");
+
+    // Renderer
+    const renderer = new THREE.WebGLRenderer({ antialias: true });
+    renderer.setPixelRatio(window.devicePixelRatio || 1);
+    renderer.setSize(window.innerWidth, window.innerHeight);
+    renderer.outputEncoding = THREE.sRGBEncoding;
+    container.appendChild(renderer.domElement);
+
+    // Scene & camera
+    const scene = new THREE.Scene();
+    scene.background = new THREE.Color(0x000000);
+
+    const camera = new THREE.PerspectiveCamera(
+      45,
+      window.innerWidth / window.innerHeight,
+      0.1,
+      1000
+    );
+    camera.position.set(0, 0, 3);
+
+    // Orbit controls
+    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    controls.enableDamping = true;
+    controls.dampingFactor = 0.05;
+    controls.minDistance = 0.5;
+    controls.maxDistance = 10.0;
+
+    // === LIGHTING FOR PHASES ===
+    // Very small ambient light just so the dark side isn't totally pitch black
+    const ambient = new THREE.AmbientLight(0xffffff, 0.05);
+    scene.add(ambient);
+
+    // Single strong directional light = Sun
+    // Coming from +X direction (from the right when camera starts at +Z)
+    const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
+    sunLight.position.set(5, 0, 0); // Sun at +X
+    scene.add(sunLight);
+
+    // Optional: visualize light direction (tiny helper)
+    // const helper = new THREE.DirectionalLightHelper(sunLight, 0.5, 0xffff00);
+    // scene.add(helper);
+
+    // Load Moon model
+    const loader = new THREE.GLTFLoader();
+    let moon = null;
+
+    loader.load(
+      MODEL_URL,
+      (gltf) => {
+        moon = gltf.scene;
+
+        // Center the Moon at origin and fit camera
+        const box = new THREE.Box3().setFromObject(moon);
+        const center = new THREE.Vector3();
+        const size = new THREE.Vector3();
+        box.getCenter(center);
+        box.getSize(size);
+
+        moon.position.sub(center);
+        scene.add(moon);
+
+        const maxDim = Math.max(size.x, size.y, size.z) || 1.0;
+        const fitDist = maxDim * 2.0; // pull back a bit more for comfort
+
+        camera.position.set(0, 0, fitDist);
+        camera.lookAt(0, 0, 0);
+        controls.target.set(0, 0, 0);
+        controls.update();
+      },
+      undefined,
+      (error) => {
+        console.error("Error loading Moon GLB:", error);
+      }
+    );
+
+    // Animate
+    function animate() {
+      requestAnimationFrame(animate);
+
+      // Optional slow spin about its axis
+      if (moon) {
+        moon.rotation.y += 0.0008;
+      }
+
+      controls.update();
+      renderer.render(scene, camera);
+    }
+    animate();
+
+    // Resize handling
+    window.addEventListener("resize", () => {
+      const w = window.innerWidth;
+      const h = window.innerHeight;
+      renderer.setSize(w, h);
+      camera.aspect = w / h;
+      camera.updateProjectionMatrix();
+    });
+  </script>
 </body>
 </html>
