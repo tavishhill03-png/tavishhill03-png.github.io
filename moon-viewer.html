@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Moon Phases Viewer (Three.js)</title>
+  <title>Moon Phases Viewer (Three.js ES Modules)</title>
   <style>
     html, body {
       margin: 0;
@@ -38,14 +38,14 @@
     Sun (directional light) is fixed from the +X side.
   </div>
 
-  <!-- Load Three.js locally from the repo -->
-  <script src="./three/three.min.js"></script>
-  <script src="./three/OrbitControls.js"></script>
-  <script src="./three/GLTFLoader.js"></script>
+  <!-- IMPORTANT: only this script; no other <script src="..."> tags -->
+  <script type="module">
+    import * as THREE from "https://unpkg.com/three@0.161.0/build/three.module.js";
+    import { OrbitControls } from "https://unpkg.com/three@0.161.0/examples/jsm/controls/OrbitControls.js";
+    import { GLTFLoader } from "https://unpkg.com/three@0.161.0/examples/jsm/loaders/GLTFLoader.js";
 
-  <script>
-    // TODO: set this to your working small moon file
-    // e.g. "small_moon.glb" or "the_moon.glb"
+    // TODO: set this to your actual small moon filename in the repo root
+    // e.g. "small_moon.glb" or "the_moon_small.glb"
     const MODEL_URL = "small_moon.glb";
 
     const container = document.getElementById("container");
@@ -69,24 +69,25 @@
     );
     camera.position.set(0, 0, 3);
 
-    const controls = new THREE.OrbitControls(camera, renderer.domElement);
+    // Controls
+    const controls = new OrbitControls(camera, renderer.domElement);
     controls.enableDamping = true;
     controls.dampingFactor = 0.05;
     controls.minDistance = 0.5;
     controls.maxDistance = 10.0;
 
     // Side lighting for phases
-    const ambient = new THREE.AmbientLight(0xffffff, 0.05);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.05); // tiny fill
     scene.add(ambient);
 
     const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
-    sunLight.position.set(5, 0, 0);   // Sun from +X
+    sunLight.position.set(5, 0, 0); // Sun from +X
     scene.add(sunLight);
 
     let moon = null;
 
-    // Load Moon
-    const loader = new THREE.GLTFLoader();
+    // Load Moon model
+    const loader = new GLTFLoader();
     loader.load(
       MODEL_URL,
       (gltf) => {
@@ -99,7 +100,7 @@
         box.getCenter(center);
         box.getSize(size);
 
-        moon.position.sub(center);
+        moon.position.sub(center); // center at origin
         scene.add(moon);
 
         const maxDim = Math.max(size.x, size.y, size.z) || 1.0;
@@ -110,7 +111,9 @@
         controls.update();
       },
       undefined,
-      (err) => console.error("Error loading Moon GLB:", err)
+      (err) => {
+        console.error("Error loading Moon GLB:", err);
+      }
     );
 
     function animate() {
