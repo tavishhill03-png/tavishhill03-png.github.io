@@ -394,14 +394,32 @@
 
       const radius = 10; // brush radius in px
 
-      highlightCtx.save();
-      if (drawingMode === "erase") {
-        highlightCtx.globalCompositeOperation = "destination-out";
-        highlightCtx.fillStyle = "rgba(0,0,0,1)";
-      } else {
-        highlightCtx.globalCompositeOperation = "source-over";
-        highlightCtx.fillStyle = `rgba(${brushRGB}, ${BRUSH_ALPHA})`;
-      }
+highlightCtx.save();
+
+if (drawingMode === "erase") {
+    highlightCtx.globalCompositeOperation = "destination-out";
+} else {
+    // Additive highlighter blending
+    highlightCtx.globalCompositeOperation = "lighter";
+}
+
+highlightCtx.beginPath();
+highlightCtx.arc(x, y, radius, 0, Math.PI * 2);
+highlightCtx.fillStyle = `rgba(${brushRGB}, ${BRUSH_ALPHA})`;
+highlightCtx.fill();
+
+highlightCtx.restore();
+
+// HARD cap opacity so highlights never get too opaque
+const imgData = highlightCtx.getImageData(x - radius, y - radius, radius*2, radius*2);
+for (let i = 0; i < imgData.data.length; i += 4) {
+    const a = imgData.data[i+3];
+    if (a > 160) imgData.data[i+3] = 160;  // Cap alpha to ~0.63
+}
+highlightCtx.putImageData(imgData, x - radius, y - radius);
+
+highlightTexture.needsUpdate = true;
+
 
       highlightCtx.beginPath();
       highlightCtx.arc(x, y, radius, 0, Math.PI * 2);
