@@ -111,14 +111,14 @@
       1000
     );
     let cameraRadius = 3; // will be updated after model load
-    camera.position.set(0, 5, cameraRadius);
+    camera.position.set(0, 0, cameraRadius);
     camera.lookAt(0, 0, 0);
 
     // Lighting: bright lit side, nearly pitch-black night
     const ambient = new THREE.AmbientLight(0xffffff, 0.00);   // tiny fill
     scene.add(ambient);
 
-    const sunLight = new THREE.DirectionalLight(0xffffff, 2.2);
+    const sunLight = new THREE.DirectionalLight(0xffffff, 5.2);
     sunLight.position.set(5, 0, 0);
     scene.add(sunLight);
 
