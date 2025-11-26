@@ -11,6 +11,7 @@ import {
 	Vector3,
 } from 'three';
 
+
 function computeMikkTSpaceTangents( geometry, MikkTSpace, negateSign = true ) {
 
 	if ( ! MikkTSpace || ! MikkTSpace.isReady ) {
