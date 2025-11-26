@@ -29,7 +29,7 @@
       z-index: 10;
       pointer-events: none;
     }
-    /* Vertical slider + controls on left side */
+    /* Left controls: highlight toggle + phase slider */
     #controls {
       position: absolute;
       left: 10px;
@@ -44,12 +44,62 @@
       font-size: 12px;
     }
     #phase-slider {
-      /* vertical slider styling */
       writing-mode: bt-lr;                 /* Firefox */
       -webkit-appearance: slider-vertical; /* Chrome/Edge */
       width: 8px;
       height: 220px;
       margin: 4px 0 0 0;
+    }
+    #draw-toggle {
+      margin-right: 4px;
+    }
+
+    /* Right-side toolbox */
+    #toolbox {
+      position: absolute;
+      right: 10px;
+      top: 50%;
+      transform: translateY(-50%);
+      padding: 8px;
+      background: rgba(0,0,0,0.7);
+      border-radius: 6px;
+      z-index: 10;
+      color: #fff;
+      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-size: 12px;
+      min-width: 120px;
+    }
+    #toolbox h4 {
+      margin: 0 0 6px 0;
+      font-size: 12px;
+      font-weight: 600;
+    }
+    .swatch-row {
+      display: flex;
+      gap: 4px;
+      margin-bottom: 6px;
+    }
+    .color-swatch {
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      border: 1px solid rgba(255,255,255,0.5);
+      cursor: pointer;
+      box-sizing: border-box;
+    }
+    .tool-btn {
+      display: inline-block;
+      margin-top: 2px;
+      padding: 3px 6px;
+      font-size: 11px;
+      border-radius: 4px;
+      border: 1px solid rgba(255,255,255,0.5);
+      background: rgba(0,0,0,0.4);
+      color: #fff;
+      cursor: pointer;
+    }
+    .tool-btn.tool-active {
+      background: rgba(255,255,255,0.2);
     }
     #error-overlay {
       position: absolute;
@@ -63,9 +113,6 @@
       border-radius: 4px;
       z-index: 20;
       display: none;
-    }
-    #draw-toggle {
-      margin-right: 4px;
     }
   </style>
 </head>
@@ -85,6 +132,21 @@
     <input type="range" id="phase-slider" min="0" max="360" step="1" value="30">
   </div>
 
+  <!-- Toolbox on the right -->
+  <div id="toolbox">
+    <h4>Tools</h4>
+    <div>Color</div>
+    <div class="swatch-row">
+      <div class="color-swatch tool-active" data-color="255,0,0"   style="background: rgba(255,0,0,0.5);"></div>
+      <div class="color-swatch"              data-color="255,255,0" style="background: rgba(255,255,0,0.5);"></div>
+      <div class="color-swatch"              data-color="0,255,255" style="background: rgba(0,255,255,0.5);"></div>
+      <div class="color-swatch"              data-color="255,0,255" style="background: rgba(255,0,255,0.5);"></div>
+    </div>
+    <button id="eraser-btn" class="tool-btn">Eraser</button>
+    <button id="clear-btn"  class="tool-btn" style="float:right;">Clear</button>
+    <div style="clear: both;"></div>
+  </div>
+
   <div id="error-overlay"></div>
 
   <script type="module">
@@ -97,6 +159,9 @@
     const phaseSlider  = document.getElementById("phase-slider");
     const drawToggle   = document.getElementById("draw-toggle");
     const errorOverlay = document.getElementById("error-overlay");
+    const swatches     = document.querySelectorAll(".color-swatch");
+    const eraserBtn    = document.getElementById("eraser-btn");
+    const clearBtn     = document.getElementById("clear-btn");
 
     function showError(msg, err) {
       console.error(msg, err || "");
@@ -134,7 +199,7 @@
     scene.add(sunLight);
 
     // ---- Sun elevation for angled terminator ----
-    const SUN_ELEV_DEG = -20;  // negative = below "equator"; tweak to taste
+    const SUN_ELEV_DEG = -20;  // negative = below "equator"
     const SUN_ELEV_RAD = THREE.MathUtils.degToRad(SUN_ELEV_DEG);
 
     // Fallback sphere (placeholder Moon)
@@ -151,6 +216,45 @@
 
     // ----- Highlight shell: canvas texture on a slightly larger sphere -----
     let highlightCanvas, highlightCtx, highlightTexture, highlightSphere;
+
+    // drawing state
+    const BRUSH_ALPHA = 0.35;   // more translucent highlighter feel
+    let brushRGB = "255,0,0";   // default red
+    let drawingMode = "draw";   // "draw" or "erase"
+
+    function setBrushColor(rgb) {
+      brushRGB = rgb;
+      drawingMode = "draw";
+      eraserBtn.classList.remove("tool-active");
+      swatches.forEach(s => s.classList.remove("tool-active"));
+      swatches.forEach(s => {
+        if (s.dataset.color === rgb) {
+          s.classList.add("tool-active");
+        }
+      });
+    }
+
+    function activateEraser() {
+      drawingMode = "erase";
+      eraserBtn.classList.add("tool-active");
+      swatches.forEach(s => s.classList.remove("tool-active"));
+    }
+
+    swatches.forEach(swatch => {
+      swatch.addEventListener("click", () => {
+        setBrushColor(swatch.dataset.color);
+      });
+    });
+
+    eraserBtn.addEventListener("click", () => {
+      activateEraser();
+    });
+
+    clearBtn.addEventListener("click", () => {
+      if (!highlightCanvas || !highlightCtx) return;
+      highlightCtx.clearRect(0, 0, highlightCanvas.width, highlightCanvas.height);
+      highlightTexture.needsUpdate = true;
+    });
 
     function createHighlightResources() {
       if (!highlightCanvas) {
@@ -173,7 +277,7 @@
         highlightSphere.parent.remove(highlightSphere);
       }
 
-      const shellRadius = desiredRadius * 1.002; // just above surface to avoid z-fighting
+      const shellRadius = desiredRadius * 1.002; // just above surface
       const shellGeom = new THREE.SphereGeometry(shellRadius, 128, 64);
       const shellMat = new THREE.MeshBasicMaterial({
         map: highlightTexture,
@@ -239,10 +343,9 @@
     // --- Phase control: move Sun around the Moon with fixed elevation ---
     function updateSunFromSlider() {
       const deg = parseFloat(phaseSlider.value);
-      const azRad = deg * Math.PI / 180;   // azimuth angle (slider)
+      const azRad = deg * Math.PI / 180;   // azimuth angle
       const R   = 10;                      // distance of “Sun”
 
-      // Fixed elevation for the Sun
       const horizR = R * Math.cos(SUN_ELEV_RAD);
       const y      = R * Math.sin(SUN_ELEV_RAD); // negative = below
 
@@ -290,10 +393,20 @@
       const y = (1 - v) * highlightCanvas.height;
 
       const radius = 10; // brush radius in px
-      highlightCtx.fillStyle = "rgba(255, 0, 0, 0.8)";
+
+      highlightCtx.save();
+      if (drawingMode === "erase") {
+        highlightCtx.globalCompositeOperation = "destination-out";
+        highlightCtx.fillStyle = "rgba(0,0,0,1)";
+      } else {
+        highlightCtx.globalCompositeOperation = "source-over";
+        highlightCtx.fillStyle = `rgba(${brushRGB}, ${BRUSH_ALPHA})`;
+      }
+
       highlightCtx.beginPath();
       highlightCtx.arc(x, y, radius, 0, Math.PI * 2);
       highlightCtx.fill();
+      highlightCtx.restore();
 
       highlightTexture.needsUpdate = true;
     }
@@ -360,6 +473,9 @@
       camera.aspect = w / h;
       camera.updateProjectionMatrix();
     });
+
+    // Set initial active color swatch state
+    setBrushColor("255,0,0");
   </script>
 </body>
 </html>
