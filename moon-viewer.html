@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <title>Moon Phases Viewer (Sphere Debug)</title>
+  <title>Moon Phases Viewer (Simple Sphere)</title>
   <style>
     html, body {
       margin: 0;
@@ -29,53 +29,19 @@
       z-index: 10;
       pointer-events: none;
     }
-    #error-overlay {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      padding: 6px 10px;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 12px;
-      color: #fff;
-      background: rgba(200,0,0,0.7);
-      border-radius: 4px;
-      z-index: 10;
-      display: none;
-    }
   </style>
 </head>
 <body>
   <div id="container"></div>
   <div id="ui-overlay">
-    Drag to rotate • Scroll to zoom • Right-drag to pan<br>
-    Debug sphere + side lighting.
+    Simple spinning sphere · Side-lit from +X<br>
+    (No mouse controls yet — just testing render + light)
   </div>
-  <div id="error-overlay"></div>
 
   <script type="module">
-    const errorOverlay = document.getElementById("error-overlay");
+    import * as THREE from "./three/three.module.js";
 
-    function showError(msg) {
-      console.error(msg);
-      errorOverlay.textContent = msg;
-      errorOverlay.style.display = "block";
-    }
-
-    console.log("👋 Sphere debug script starting");
-
-    let THREE, OrbitControls;
-    try {
-      const threeModule = await import("./three/three.module.js");
-      THREE = threeModule;
-      console.log("✅ three.module.js loaded:", THREE);
-
-      const controlsModule = await import("./three/OrbitControls.js");
-      OrbitControls = controlsModule.OrbitControls;
-      console.log("✅ OrbitControls loaded:", OrbitControls);
-    } catch (e) {
-      showError("Error loading Three.js modules. See console.");
-      throw e;
-    }
+    console.log("✅ three.module.js imported:", THREE);
 
     const container = document.getElementById("container");
 
@@ -84,14 +50,11 @@
     renderer.setPixelRatio(window.devicePixelRatio || 1);
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
-    renderer.setClearColor(0x003366); // dark blue clear color
     container.appendChild(renderer.domElement);
-    console.log("✅ Renderer created");
 
     // Scene & camera
     const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000); // scene bg (black)
-    console.log("✅ Scene created");
+    scene.background = new THREE.Color(0x000000); // black scene bg
 
     const camera = new THREE.PerspectiveCamera(
       45,
@@ -100,28 +63,17 @@
       1000
     );
     camera.position.set(0, 0, 3);
-    console.log("✅ Camera created");
-
-    // Controls
-    const controls = new OrbitControls(camera, renderer.domElement);
-    controls.enableDamping = true;
-    controls.dampingFactor = 0.05;
-    controls.minDistance = 0.5;
-    controls.maxDistance = 10.0;
-    controls.target.set(0, 0, 0);
-    controls.update();
-    console.log("✅ OrbitControls set up");
+    camera.lookAt(0, 0, 0);
 
     // Lighting for phases
-    const ambient = new THREE.AmbientLight(0xffffff, 0.05);
+    const ambient = new THREE.AmbientLight(0xffffff, 0.05); // tiny fill
     scene.add(ambient);
 
     const sunLight = new THREE.DirectionalLight(0xffffff, 1.4);
     sunLight.position.set(5, 0, 0); // Sun from +X
     scene.add(sunLight);
-    console.log("✅ Lights added");
 
-    // Debug sphere
+    // Sphere as placeholder Moon
     const geometry = new THREE.SphereGeometry(1, 64, 64);
     const material = new THREE.MeshStandardMaterial({
       color: 0xffffff,
@@ -130,17 +82,17 @@
     });
     const moon = new THREE.Mesh(geometry, material);
     scene.add(moon);
-    console.log("✅ Sphere added to scene");
+
+    console.log("✅ Sphere added, starting animation");
 
     function animate() {
       requestAnimationFrame(animate);
-      moon.rotation.y += 0.0008;
-      controls.update();
+      moon.rotation.y += 0.003; // a bit faster so you can see it move
       renderer.render(scene, camera);
     }
-    console.log("✅ Starting animation loop");
     animate();
 
+    // Handle resize
     window.addEventListener("resize", () => {
       const w = window.innerWidth;
       const h = window.innerHeight;
