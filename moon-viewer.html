@@ -1,248 +1,230 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <title>Moon Phases Viewer</title>
+  <meta charset="UTF-8" />
+  <title>Moon Viewer with Tilted Sunlight</title>
   <style>
     html, body {
       margin: 0;
       padding: 0;
       overflow: hidden;
-      width: 100%;
+      background: #000;
       height: 100%;
+      width: 100%;
+    }
+
+    #moon-container {
+      position: relative;
+      width: 100vw;
+      height: 100vh;
+      overflow: hidden;
       background: #000;
     }
-    #container {
-      width: 100%;
-      height: 100%;
-    }
-    #ui-overlay {
+
+    /* Vertical phase slider on the left */
+    #phase-slider-wrapper {
       position: absolute;
-      top: 10px;
-      left: 10px;
-      padding: 6px 10px;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 12px;
-      color: #fff;
-      background: rgba(0,0,0,0.6);
-      border-radius: 4px;
-      z-index: 10;
-      pointer-events: none;
-    }
-    /* Vertical slider controls on left side */
-    #controls {
-      position: absolute;
-      left: 10px;
+      left: 12px;
       top: 50%;
-      transform: translateY(-100%);
-      padding: 8px;
-      background: rgba(0,0,0,0.7);
-      border-radius: 6px;
+      transform: translateY(-50%);
       z-index: 10;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none; /* wrapper doesn't interfere with mouse */
     }
+
     #phase-slider {
-      /* vertical slider styling */
-      writing-mode: bt-lr;              /* Firefox */
-      -webkit-appearance: slider-vertical; /* Chrome/Edge */
-      width: 8px;
-      height: 220px;
-      margin: 0;
+      pointer-events: auto; /* but the slider itself can be interacted with */
+      width: 150px;         /* used as "length" since we rotate it */
+      transform: rotate(-90deg);
+      /* Basic styling; you can customize more as needed */
+      -webkit-appearance: none;
+      appearance: none;
+      background: #333;
+      height: 6px;
+      border-radius: 3px;
+      outline: none;
     }
-    #error-overlay {
-      position: absolute;
-      bottom: 10px;
-      left: 10px;
-      padding: 6px 10px;
-      font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-      font-size: 12px;
-      color: #fff;
-      background: rgba(200,0,0,0.85);
-      border-radius: 4px;
-      z-index: 20;
-      display: none;
+
+    #phase-slider::-webkit-slider-thumb {
+      -webkit-appearance: none;
+      appearance: none;
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ccc;
+      cursor: pointer;
+    }
+
+    #phase-slider::-moz-range-thumb {
+      width: 14px;
+      height: 14px;
+      border-radius: 50%;
+      background: #ccc;
+      cursor: pointer;
+      border: none;
     }
   </style>
 </head>
 <body>
-  <div id="container"></div>
-
-  <div id="ui-overlay">
-    Click + drag to rotate • Scroll to zoom.
+  <div id="moon-container">
+    <div id="phase-slider-wrapper">
+      <input
+        id="phase-slider"
+        type="range"
+        min="0"
+        max="1"
+        step="0.001"
+        value="0.25"
+      />
+    </div>
   </div>
 
-  <div id="controls">
-    <input type="range" id="phase-slider" min="0" max="360" step="1" value="30">
-  </div>
+  <!-- Three.js and helpers -->
+  <script src="https://unpkg.com/three@0.159.0/build/three.min.js"></script>
+  <script src="https://unpkg.com/three@0.159.0/examples/js/controls/OrbitControls.js"></script>
+  <script src="https://unpkg.com/three@0.159.0/examples/js/loaders/GLTFLoader.js"></script>
 
-  <div id="error-overlay"></div>
+  <script>
+    let scene, camera, renderer, controls;
+    let moon = null;
+    let dirLight, ambientLight;
+    const sunDir = new THREE.Vector3();
 
-  <script type="module">
-    import * as THREE from "./three/three.module.js";
-    import { GLTFLoader } from "./three/GLTFLoader.js";
+    // Elevation angle for sunlight: negative = from below equator
+    const SUN_ELEV_DEG = -20;
+    const SUN_ELEV_RAD = THREE.MathUtils.degToRad(SUN_ELEV_DEG);
 
-    const MODEL_URL = "the_moon.glb";  // high-res model
+    const container = document.getElementById('moon-container');
+    const phaseSlider = document.getElementById('phase-slider');
 
-    const container    = document.getElementById("container");
-    const phaseSlider  = document.getElementById("phase-slider");
-    const errorOverlay = document.getElementById("error-overlay");
-
-    function showError(msg, err) {
-      console.error(msg, err || "");
-      errorOverlay.textContent = msg;
-      errorOverlay.style.display = "block";
-    }
-
-    // Renderer
-    const renderer = new THREE.WebGLRenderer({ antialias: true });
-    renderer.setPixelRatio(window.devicePixelRatio || 1);
-    renderer.setSize(window.innerWidth, window.innerHeight);
-    renderer.outputEncoding = THREE.sRGBEncoding;
-    container.appendChild(renderer.domElement);
-
-    // Scene & camera
-    const scene = new THREE.Scene();
-    scene.background = new THREE.Color(0x000000);
-
-    const camera = new THREE.PerspectiveCamera(
-      45,
-      window.innerWidth / window.innerHeight,
-      0.1,
-      1000
-    );
-    let cameraRadius = 3; // will be updated after model load
-    camera.position.set(0, 0, cameraRadius);
-    camera.lookAt(0, 0, 0);
-
-    // Lighting: bright lit side, pitch-black night
-    const ambient = new THREE.AmbientLight(0xffffff, 0.00);   // no fill
-    scene.add(ambient);
-
-    const sunLight = new THREE.DirectionalLight(0xffffff, 5.2);
-    sunLight.position.set(5, 0, 0);
-    scene.add(sunLight);
-
-    // Fallback sphere (placeholder Moon)
-    const placeholderGeom = new THREE.SphereGeometry(1, 64, 64);
-    const placeholderMat = new THREE.MeshStandardMaterial({
-      color: 0xffffff,
-      roughness: 1.0,
-      metalness: 0.0
-    });
-    const placeholderMoon = new THREE.Mesh(placeholderGeom, placeholderMat);
-    scene.add(placeholderMoon);
-
-    let moon = placeholderMoon;
-
-    // Load high-res Moon model
-    const loader = new GLTFLoader();
-    loader.load(
-      MODEL_URL,
-      (gltf) => {
-        console.log("🌕 Loaded high-res moon:", gltf);
-        scene.remove(placeholderMoon);
-
-        moon = gltf.scene;
-
-        // Center and scale
-        const box = new THREE.Box3().setFromObject(moon);
-        const center = new THREE.Vector3();
-        const size   = new THREE.Vector3();
-        box.getCenter(center);
-        box.getSize(size);
-
-        moon.position.sub(center); // center at origin
-
-        const maxDim = Math.max(size.x, size.y, size.z) || 1.0;
-        const currentRadius = maxDim * 0.5;
-        const desiredRadius = 1.0;
-        const scaleFactor   = desiredRadius / currentRadius;
-        moon.scale.setScalar(scaleFactor);
-
-        scene.add(moon);
-
-        // Update camera radius for new size
-        cameraRadius = desiredRadius * 3.0;
-        camera.position.set(0, 0, cameraRadius);
-        camera.lookAt(0, 0, 0);
-      },
-      undefined,
-      (err) => {
-        showError("Failed to load high-res Moon model. Using fallback sphere.", err);
-        moon = placeholderMoon;
-      }
-    );
-
-    // --- Phase control: move Sun around the Moon ---
-    function updateSunFromSlider() {
-      const deg = parseFloat(phaseSlider.value);
-      const rad = deg * Math.PI / 180;
-      const R   = 10; // distance of “Sun”
-
-      const x = R * Math.sin(rad);
-      const z = R * Math.cos(rad);
-      sunLight.position.set(x, 0, z);
-      sunLight.lookAt(0, 0, 0);
-    }
-
-    phaseSlider.addEventListener("input", updateSunFromSlider);
-    updateSunFromSlider(); // initial position
-
-    // --- Drag-to-rotate (no auto-spin) ---
-    let isDragging = false;
-    let prevX = 0;
-    let prevY = 0;
-
-    renderer.domElement.addEventListener("pointerdown", (e) => {
-      isDragging = true;
-      prevX = e.clientX;
-      prevY = e.clientY;
-    });
-
-    window.addEventListener("pointerup", () => {
-      isDragging = false;
-    });
-
-    window.addEventListener("pointermove", (e) => {
-      if (!isDragging || !moon) return;
-      const deltaX = (e.clientX - prevX) * 0.01;
-      const deltaY = (e.clientY - prevY) * 0.01;
-      moon.rotation.y += deltaX;
-      moon.rotation.x += deltaY;
-      prevX = e.clientX;
-      prevY = e.clientY;
-    });
-
-    // --- Mouse wheel zoom ---
-    const minRadius = 1.2;
-    const maxRadius = 15.0;
-
-    function onWheel(e) {
-      e.preventDefault();
-      const delta = e.deltaY;
-      // Scroll up (negative deltaY) → zoom in
-      cameraRadius *= 1 + delta * 0.001;
-      cameraRadius = Math.min(Math.max(cameraRadius, minRadius), maxRadius);
-      camera.position.set(0, 0, cameraRadius);
-      camera.lookAt(0, 0, 0);
-    }
-
-    renderer.domElement.addEventListener("wheel", onWheel, { passive: false });
-
-    // Animation loop
-    function animate() {
-      requestAnimationFrame(animate);
-      renderer.render(scene, camera);
-    }
+    init();
     animate();
 
-    // Handle resize
-    window.addEventListener("resize", () => {
-      const w = window.innerWidth;
-      const h = window.innerHeight;
-      renderer.setSize(w, h);
-      camera.aspect = w / h;
+    function init() {
+      scene = new THREE.Scene();
+
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      camera = new THREE.PerspectiveCamera(45, width / height, 0.1, 1000);
+      camera.position.set(0, 0, 6);
+
+      renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+      renderer.setSize(width, height);
+      renderer.setPixelRatio(window.devicePixelRatio || 1);
+      renderer.setClearColor(0x000000, 1);
+      container.appendChild(renderer.domElement);
+
+      // Lights: low ambient + directional as Sun
+      ambientLight = new THREE.AmbientLight(0xffffff, 0.15);
+      scene.add(ambientLight);
+
+      dirLight = new THREE.DirectionalLight(0xffffff, 2.0);
+      dirLight.castShadow = false;
+      scene.add(dirLight);
+
+      dirLight.target.position.set(0, 0, 0);
+      scene.add(dirLight.target);
+
+      // Initial lighting from slider's default value
+      updateLightingFromPhase(parseFloat(phaseSlider.value));
+
+      // OrbitControls (no auto-rotation; mouse wheel zoom enabled)
+      controls = new THREE.OrbitControls(camera, renderer.domElement);
+      controls.enableDamping = true;
+      controls.dampingFactor = 0.05;
+      controls.enablePan = false;
+      controls.autoRotate = false;
+      controls.enableZoom = true;
+      controls.minDistance = 2.0;
+      controls.maxDistance = 15.0;
+
+      // Slightly limit vertical rotation so "below" has meaning visually if you want
+      // controls.minPolarAngle = 0.2;
+      // controls.maxPolarAngle = Math.PI - 0.2;
+
+      // Load high-res Moon model
+      const loader = new THREE.GLTFLoader();
+      loader.load(
+        'the_moon.glb',          // make sure this path matches where you host the glb
+        (gltf) => {
+          moon = gltf.scene;
+          scene.add(moon);
+
+          // Optionally normalize scale so radius is ~1–2 units
+          const box = new THREE.Box3().setFromObject(moon);
+          const size = new THREE.Vector3();
+          box.getSize(size);
+          const maxDim = Math.max(size.x, size.y, size.z);
+          const desiredRadius = 2.0; // tweak as you like
+          const scaleFactor = (desiredRadius * 2) / maxDim;
+          moon.scale.setScalar(scaleFactor);
+
+          // Center the model
+          const center = new THREE.Vector3();
+          box.getCenter(center);
+          moon.position.sub(center.multiplyScalar(scaleFactor));
+
+          // Ensure lighting is updated now that the Moon is present
+          updateLightingFromPhase(parseFloat(phaseSlider.value));
+        },
+        undefined,
+        (error) => {
+          console.error('Error loading the_moon.glb:', error);
+        }
+      );
+
+      // Slider interaction
+      phaseSlider.addEventListener('input', (e) => {
+        const val = parseFloat(e.target.value);
+        updateLightingFromPhase(val);
+      });
+
+      window.addEventListener('resize', onWindowResize, false);
+    }
+
+    function onWindowResize() {
+      const width = container.clientWidth;
+      const height = container.clientHeight;
+
+      camera.aspect = width / height;
       camera.updateProjectionMatrix();
-    });
+
+      renderer.setSize(width, height);
+    }
+
+    // phaseValue: 0 → 1
+    // We rotate the Sun around the Moon in azimuth, with a fixed elevation below horizontal
+    function updateLightingFromPhase(phaseValue) {
+      const phaseRad = phaseValue * Math.PI * 2; // 0 → 2π
+
+      // direction from Sun toward Moon in Moon's coordinate frame
+      sunDir.set(
+        Math.cos(SUN_ELEV_RAD) * Math.cos(phaseRad), // x
+        Math.sin(SUN_ELEV_RAD),                      // y (negative = from "below")
+        Math.cos(SUN_ELEV_RAD) * Math.sin(phaseRad)  // z
+      ).normalize();
+
+      // Place the directional light far away along this direction
+      const lightDistance = 50; // arbitrary; large enough to approximate parallel rays
+      dirLight.position.copy(sunDir).multiplyScalar(lightDistance);
+
+      // Always point light at the Moon's center (0,0,0 in this setup)
+      dirLight.target.position.set(0, 0, 0);
+      dirLight.target.updateMatrixWorld();
+    }
+
+    function animate() {
+      requestAnimationFrame(animate);
+
+      if (controls) {
+        controls.update();
+      }
+
+      renderer.render(scene, camera);
+    }
   </script>
 </body>
 </html>
