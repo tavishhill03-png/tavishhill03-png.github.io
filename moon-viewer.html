@@ -431,13 +431,14 @@
       pointerNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     }
 
-    // stylus sensitivity helper: only draw if pen pressure is above threshold
+    // stylus/mouse gate: only draw if primary button is actually down
     function eventAllowsDrawing(e) {
-      if (e.pointerType === "pen") {
-        // require a bit of pressure so hover / very light contact doesn't mark
-        return (e.pressure || 0) > 0.25;
+      if (e.pointerType === "pen" || e.pointerType === "mouse") {
+        // e.buttons is a bitmask; bit 0 (value 1) = primary button
+        return (e.buttons & 1) === 1;
       }
-      return true; // mouse / touch
+      // For touch or anything else, just allow when in drawing mode
+      return true;
     }
 
     // capped-opacity highlighter behavior
