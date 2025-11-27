@@ -29,7 +29,7 @@
       z-index: 10;
       pointer-events: none;
     }
-    /* Left controls: highlight toggle + phase slider */
+    /* Left controls: phase slider */
     #controls {
       position: absolute;
       left: 10px;
@@ -50,9 +50,6 @@
       height: 220px;
       margin: 4px 0 0 0;
     }
-    #draw-toggle {
-      margin-right: 4px;
-    }
 
     /* Right-side toolbox */
     #toolbox {
@@ -67,7 +64,7 @@
       color: #fff;
       font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
       font-size: 12px;
-      min-width: 120px;
+      min-width: 140px;
     }
     #toolbox h4 {
       margin: 0 0 6px 0;
@@ -78,6 +75,7 @@
       display: flex;
       gap: 4px;
       margin-bottom: 6px;
+      flex-wrap: wrap;
     }
     .color-swatch {
       width: 18px;
@@ -120,15 +118,11 @@
   <div id="container"></div>
 
   <div id="ui-overlay">
-    Click + drag to rotate • Scroll to zoom.
+    Left-click/pen = mark or erase • Right-click + drag = rotate • Scroll = zoom.
   </div>
 
   <div id="controls">
-    <label>
-      <input type="checkbox" id="draw-toggle">
-      Highlight
-    </label>
-    <br>
+    Phase<br>
     <input type="range" id="phase-slider" min="0" max="360" step="1" value="30">
   </div>
 
@@ -142,9 +136,19 @@
       <div class="color-swatch"              data-color="0,255,255" style="background: rgba(0,255,255,0.5);"></div>
       <div class="color-swatch"              data-color="255,0,255" style="background: rgba(255,0,255,0.5);"></div>
     </div>
-    <button id="eraser-btn" class="tool-btn">Eraser</button>
-    <button id="clear-btn"  class="tool-btn" style="float:right;">Clear</button>
-    <div style="clear: both;"></div>
+
+    <div style="margin-top:4px;">Mode</div>
+    <div class="swatch-row">
+      <button id="mark-btn"  class="tool-btn tool-active">Mark</button>
+      <button id="erase-btn" class="tool-btn">Erase</button>
+    </div>
+
+    <div style="margin-top:4px;">
+      <button id="undo-btn" class="tool-btn">Undo</button>
+      <button id="redo-btn" class="tool-btn">Redo</button>
+      <button id="clear-btn" class="tool-btn" style="float:right;">Clear</button>
+      <div style="clear:both;"></div>
+    </div>
   </div>
 
   <div id="error-overlay"></div>
@@ -157,10 +161,12 @@
 
     const container    = document.getElementById("container");
     const phaseSlider  = document.getElementById("phase-slider");
-    const drawToggle   = document.getElementById("draw-toggle");
     const errorOverlay = document.getElementById("error-overlay");
     const swatches     = document.querySelectorAll(".color-swatch");
-    const eraserBtn    = document.getElementById("eraser-btn");
+    const markBtn      = document.getElementById("mark-btn");
+    const eraseBtn     = document.getElementById("erase-btn");
+    const undoBtn      = document.getElementById("undo-btn");
+    const redoBtn      = document.getElementById("redo-btn");
     const clearBtn     = document.getElementById("clear-btn");
 
     function showError(msg, err) {
@@ -175,6 +181,9 @@
     renderer.setSize(window.innerWidth, window.innerHeight);
     renderer.outputEncoding = THREE.sRGBEncoding;
     container.appendChild(renderer.domElement);
+
+    // Disable default context menu on right-click (we use it for rotate)
+    renderer.domElement.addEventListener("contextmenu", (e) => e.preventDefault());
 
     // Scene & camera
     const scene = new THREE.Scene();
@@ -219,12 +228,33 @@
 
     // drawing state
     let brushRGB = "255,0,0";   // default red
-    let drawingMode = "draw";   // "draw" or "erase"
+    let drawingMode = "mark";   // "mark" or "erase"
+
+    // undo/redo stacks
+    const undoStack = [];
+    const redoStack = [];
+    const MAX_HISTORY = 30;
+
+    function pushUndoState() {
+      if (!highlightCanvas || !highlightCtx) return;
+      const w = highlightCanvas.width;
+      const h = highlightCanvas.height;
+      const snapshot = highlightCtx.getImageData(0, 0, w, h);
+      undoStack.push(snapshot);
+      if (undoStack.length > MAX_HISTORY) undoStack.shift();
+      // new stroke invalidates redo history
+      redoStack.length = 0;
+    }
+
+    function restoreFromImageData(imageData) {
+      if (!highlightCanvas || !highlightCtx) return;
+      highlightCtx.putImageData(imageData, 0, 0);
+      highlightTexture.needsUpdate = true;
+    }
 
     function setBrushColor(rgb) {
       brushRGB = rgb;
-      drawingMode = "draw";
-      eraserBtn.classList.remove("tool-active");
+      setMode("mark"); // choosing a color switches to Mark
       swatches.forEach(s => s.classList.remove("tool-active"));
       swatches.forEach(s => {
         if (s.dataset.color === rgb) {
@@ -233,10 +263,15 @@
       });
     }
 
-    function activateEraser() {
-      drawingMode = "erase";
-      eraserBtn.classList.add("tool-active");
-      swatches.forEach(s => s.classList.remove("tool-active"));
+    function setMode(mode) {
+      drawingMode = mode;
+      if (mode === "mark") {
+        markBtn.classList.add("tool-active");
+        eraseBtn.classList.remove("tool-active");
+      } else {
+        markBtn.classList.remove("tool-active");
+        eraseBtn.classList.add("tool-active");
+      }
     }
 
     swatches.forEach(swatch => {
@@ -245,12 +280,35 @@
       });
     });
 
-    eraserBtn.addEventListener("click", () => {
-      activateEraser();
+    markBtn.addEventListener("click", () => setMode("mark"));
+    eraseBtn.addEventListener("click", () => setMode("erase"));
+
+    undoBtn.addEventListener("click", () => {
+      if (!highlightCanvas || !highlightCtx) return;
+      if (undoStack.length === 0) return;
+      const w = highlightCanvas.width;
+      const h = highlightCanvas.height;
+      const current = highlightCtx.getImageData(0, 0, w, h);
+      redoStack.push(current);
+      const prev = undoStack.pop();
+      restoreFromImageData(prev);
+    });
+
+    redoBtn.addEventListener("click", () => {
+      if (!highlightCanvas || !highlightCtx) return;
+      if (redoStack.length === 0) return;
+      const w = highlightCanvas.width;
+      const h = highlightCanvas.height;
+      const current = highlightCtx.getImageData(0, 0, w, h);
+      undoStack.push(current);
+      const next = redoStack.pop();
+      restoreFromImageData(next);
     });
 
     clearBtn.addEventListener("click", () => {
       if (!highlightCanvas || !highlightCtx) return;
+      // allow Clear to be undone
+      pushUndoState();
       highlightCtx.clearRect(0, 0, highlightCanvas.width, highlightCanvas.height);
       highlightTexture.needsUpdate = true;
     });
@@ -358,7 +416,7 @@
     phaseSlider.addEventListener("input", updateSunFromSlider);
     updateSunFromSlider(); // initial position
 
-    // --- Drag-to-rotate OR draw (depending on mode) ---
+    // --- Drag-to-rotate OR draw (depending on mouse button) ---
     let isDragging = false;
     let isDrawing  = false;
     let prevX = 0;
@@ -373,9 +431,19 @@
       pointerNDC.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
     }
 
+    // stylus sensitivity helper: only draw if pen pressure is above threshold
+    function eventAllowsDrawing(e) {
+      if (e.pointerType === "pen") {
+        // require a bit of pressure so hover / very light contact doesn't mark
+        return (e.pressure || 0) > 0.25;
+      }
+      return true; // mouse / touch
+    }
+
     // capped-opacity highlighter behavior
     function drawOnHighlightSphere(e) {
       if (!highlightSphere || !highlightCanvas || !highlightCtx) return;
+      if (!eventAllowsDrawing(e)) return;
 
       setPointerFromEvent(e);
       raycaster.setFromCamera(pointerNDC, camera);
@@ -392,8 +460,8 @@
       const x = u * highlightCanvas.width;
       const y = (1 - v) * highlightCanvas.height;
 
-      const radius     = 18;      // brush radius in px
-      const MAX_ALPHA  = 0.38;    // hard cap for highlight opacity
+      const radius      = 18;     // brush radius in px
+      const MAX_ALPHA   = 0.38;   // hard cap for highlight opacity
       const BRUSH_ALPHA = 0.18;   // per-stroke alpha (won't exceed MAX_ALPHA overall)
 
       highlightCtx.save();
@@ -409,7 +477,7 @@
         return;
       }
 
-      // ---- DRAW MODE: highlighter blend ----
+      // ---- MARK MODE: highlighter blend ----
       highlightCtx.globalCompositeOperation = "lighter";
       highlightCtx.fillStyle = `rgba(${brushRGB}, ${BRUSH_ALPHA})`;
 
@@ -449,17 +517,20 @@
       prevX = e.clientX;
       prevY = e.clientY;
 
-      if (drawToggle.checked) {
-        isDrawing = true;
-        drawOnHighlightSphere(e); // dot on initial touch
-      } else {
+      if (e.button === 2) {
+        // right-click: rotate
         isDragging = true;
+      } else if (e.button === 0) {
+        // left-click / pen: draw (mark or erase)
+        isDrawing = true;
+        pushUndoState();   // snapshot before stroke
+        drawOnHighlightSphere(e); // initial dot
       }
     });
 
-    window.addEventListener("pointerup", () => {
-      isDragging = false;
-      isDrawing  = false;
+    window.addEventListener("pointerup", (e) => {
+      if (e.button === 2) isDragging = false;
+      if (e.button === 0) isDrawing  = false;
     });
 
     window.addEventListener("pointermove", (e) => {
@@ -508,8 +579,9 @@
       camera.updateProjectionMatrix();
     });
 
-    // Set initial active color swatch state
+    // Initial tool states
     setBrushColor("255,0,0");
+    setMode("mark");
   </script>
 </body>
 </html>
